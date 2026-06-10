@@ -32,6 +32,10 @@ app.post('/render', async (req, res) => {
   }
 });
 
-app.listen(port, () => {
+const server = app.listen(port, () => {
   console.log(`Tlin Reels Renderer listening on http://localhost:${port}`);
 });
+
+server.requestTimeout = Number(process.env.REQUEST_TIMEOUT_MS || 15 * 60 * 1000);
+server.headersTimeout = server.requestTimeout + 10 * 1000;
+server.keepAliveTimeout = 65 * 1000;
