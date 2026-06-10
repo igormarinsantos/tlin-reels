@@ -1,0 +1,15 @@
+{
+  "postId": "spacing-test",
+  "videoUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+  "thumbnailUrl": "",
+  "variants": [
+    {
+      "index": 1,
+      "text": "Isso mudou tudo."
+    },
+    {
+      "index": 2,
+      "text": "Esse video parece simples no começo, mas mostra uma daquelas demos que fazem voce parar e pensar se o futuro acabou de chegar antes do esperado."
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "postId": "sample-post",
+  "videoUrl": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+  "thumbnailUrl": "",
+  "variants": [
+    {
+      "index": 1,
+      "text": "Isso parece mentira, mas essa demo acabou de sair agora."
+    },
+    {
+      "index": 2,
+      "text": "A IA simplesmente ganhou um corpo novo e quase ninguem percebeu."
+    },
+    {
+      "index": 3,
+      "text": "Esse video parece ficcao, mas e uma demo real. Voce usaria isso no dia a dia?"
+    }
+  ]
+}

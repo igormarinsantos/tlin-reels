@@ -1,0 +1,14 @@
+{
+  "name": "tlin-reels-renderer",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "render:sample": "node src/render-sample.js",
+    "render:spacing-test": "node src/render-spacing-test.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}

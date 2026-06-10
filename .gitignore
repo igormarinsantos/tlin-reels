@@ -1,0 +1,12 @@
+node_modules/
+output/
+work/
+*.log
+server.err.log
+server.log
+*.local
+.env
+*.lnk
+
+# n8n exports can contain workspace-specific IDs and credential references.
+*UPDATED.json
