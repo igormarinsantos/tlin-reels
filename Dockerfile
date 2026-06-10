@@ -12,10 +12,14 @@ RUN npm ci --omit=dev
 COPY . .
 
 RUN mkdir -p /app/output /app/work
-RUN fc-cache -f
+RUN mkdir -p /usr/local/share/fonts/tlin \
+  && cp /app/assets/fonts/*.ttf /usr/local/share/fonts/tlin/ \
+  && fc-cache -f
 
 ENV NODE_ENV=production
 ENV PORT=8787
+ENV EMOJI_FONT=/app/assets/fonts/AppleColorEmoji.ttf
+ENV USE_FONTCONFIG=1
 
 EXPOSE 8787
 

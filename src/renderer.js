@@ -16,10 +16,12 @@ const verifiedImage = path.join(rootDir, 'assets', 'verified.png');
 const FONT_REGULAR = process.env.FONT_REGULAR || defaultFont('regular');
 const FONT_BOLD = process.env.FONT_BOLD || defaultFont('bold');
 const EMOJI_FONT = process.env.EMOJI_FONT || path.join(rootDir, 'assets', 'fonts', 'AppleColorEmoji.ttf');
+const USE_FONTCONFIG = process.env.USE_FONTCONFIG === '1';
 
 const CANVAS = { w: 1080, h: 1920 };
 const SAFE = { x: 0, y: 285, w: 1080, h: 1350 };
 const CARD = { x: 100, y: 305, w: 880, h: 1310 };
+const COPY_VIDEO_GAP = Number(process.env.COPY_VIDEO_GAP || 28);
 const MAX_DURATION_SECONDS = Number(process.env.MAX_DURATION_SECONDS || 20);
 const FFMPEG_PRESET = process.env.FFMPEG_PRESET || 'veryfast';
 const FFMPEG_CRF = String(process.env.FFMPEG_CRF || 20);
@@ -124,7 +126,7 @@ async function probeDuration(input) {
 
 async function renderVariant({ input, output, baseLayer, frameLayer, textLayout, duration }) {
   const copyY = CARD.y + 190;
-  const videoY = copyY + textLayout.height + 52;
+  const videoY = copyY + textLayout.height + COPY_VIDEO_GAP;
   const videoBottomLimit = SAFE.y + SAFE.h - 40;
   const video = {
     x: CARD.x,
@@ -199,7 +201,7 @@ function urlishPath(value) {
 
 async function createStaticLayers({ postId, index, textLayout, profile }) {
   const copyY = CARD.y + 190;
-  const videoY = copyY + textLayout.height + 52;
+  const videoY = copyY + textLayout.height + COPY_VIDEO_GAP;
   const videoBottomLimit = SAFE.y + SAFE.h - 40;
   const video = {
     x: CARD.x,
@@ -334,11 +336,11 @@ function estimateTextWidth(text, fontSize, factor) {
 
 
 function drawText({ input, output, text, font, size, color, x, y }) {
-  return `[${input}]drawtext=fontfile='${ffPath(font)}':text='${ffText(text)}':fontcolor=${color}:fontsize=${size}:x=${x}:y=${y}[${output}]`;
+  return `[${input}]drawtext=${fontOption(font)}:text='${ffText(text)}':fontcolor=${color}:fontsize=${size}:x=${x}:y=${y}[${output}]`;
 }
 
 function drawTextFile({ input, output, textPath, font, size, color, x, y, lineSpacing }) {
-  return `[${input}]drawtext=fontfile='${ffPath(font)}':textfile='${ffPath(textPath)}':fontcolor=${color}:fontsize=${size}:line_spacing=${lineSpacing}:x=${x}:y=${y}[${output}]`;
+  return `[${input}]drawtext=${fontOption(font)}:textfile='${ffPath(textPath)}':fontcolor=${color}:fontsize=${size}:line_spacing=${lineSpacing}:x=${x}:y=${y}[${output}]`;
 }
 
 function drawRoundedStroke(input, output, x, y, w, h, r, color, thickness) {
@@ -380,6 +382,15 @@ function roundedAlpha(input, output, width, height, radius) {
 
 function ffPath(value) {
   return path.resolve(value).replace(/\\/g, '/').replace(':', '\\:');
+}
+
+function fontOption(font) {
+  if (!USE_FONTCONFIG) {
+    return `fontfile='${ffPath(font)}'`;
+  }
+
+  const style = path.basename(font).toLowerCase().includes('bold') ? ':style=Bold' : '';
+  return `font='DM Sans${style}'`;
 }
 
 function ffText(value) {

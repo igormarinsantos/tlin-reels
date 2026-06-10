@@ -18,6 +18,7 @@ PUBLIC_URL=https://reels.tlin.cloud
 MAX_DURATION_SECONDS=12
 FFMPEG_PRESET=ultrafast
 FFMPEG_CRF=22
+COPY_VIDEO_GAP=28
 PROFILE_NAME=Tlin
 PROFILE_HANDLE=@tlin.ai
 PROFILE_IMAGE_URL=https://seu-dominio.com/profile.png
@@ -28,19 +29,14 @@ VERIFIED_IMAGE_URL=https://seu-dominio.com/verified.png
 
 ## Emoji
 
-O Docker instala `fonts-noto-color-emoji` para suporte de emoji no Linux. Para tentar usar emojis no estilo Apple, coloque a fonte `AppleColorEmoji.ttf` em:
-
-```text
-assets/fonts/AppleColorEmoji.ttf
-```
-
-No Coolify, mantenha esse arquivo no repositorio ou monte ele como volume e configure:
+O projeto inclui `assets/fonts/AppleColorEmoji.ttf`, baixada da release Linux de `samuelngs/apple-emoji-ttf`. No Docker, as fontes do projeto sao copiadas para o `fontconfig` e o FFmpeg roda com `USE_FONTCONFIG=1`.
 
 ```text
 EMOJI_FONT=/app/assets/fonts/AppleColorEmoji.ttf
+USE_FONTCONFIG=1
 ```
 
-Observacao: a fonte da Apple e proprietaria, entao ela nao vem embutida neste projeto.
+Observacao: a fonte da Apple e proprietaria; confira a licenca/uso antes de distribuir publicamente.
 
 API:
 
