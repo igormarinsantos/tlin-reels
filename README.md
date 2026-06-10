@@ -9,9 +9,26 @@ npm install
 npm start
 ```
 
-## Emoji Apple
+## Configuracao
 
-Para renderizar emojis no estilo Apple, coloque a fonte `AppleColorEmoji.ttf` em:
+Variaveis uteis no Coolify:
+
+```text
+PUBLIC_URL=https://reels.tlin.cloud
+MAX_DURATION_SECONDS=12
+FFMPEG_PRESET=ultrafast
+FFMPEG_CRF=22
+PROFILE_NAME=Tlin
+PROFILE_HANDLE=@tlin.ai
+PROFILE_IMAGE_URL=https://seu-dominio.com/profile.png
+VERIFIED_IMAGE_URL=https://seu-dominio.com/verified.png
+```
+
+`FFMPEG_PRESET=ultrafast` acelera bastante e aumenta um pouco o tamanho do arquivo. Se quiser mais qualidade/arquivo menor, use `veryfast`.
+
+## Emoji
+
+O Docker instala `fonts-noto-color-emoji` para suporte de emoji no Linux. Para tentar usar emojis no estilo Apple, coloque a fonte `AppleColorEmoji.ttf` em:
 
 ```text
 assets/fonts/AppleColorEmoji.ttf
@@ -38,6 +55,13 @@ Payload esperado:
   "postId": "123",
   "videoUrl": "https://example.com/video.mp4",
   "thumbnailUrl": "https://example.com/thumb.jpg",
+  "maxDurationSeconds": 12,
+  "profile": {
+    "name": "Tlin",
+    "handle": "@tlin.ai",
+    "imageUrl": "https://example.com/profile.png",
+    "verifiedImageUrl": "https://example.com/verified.png"
+  },
   "variants": [
     { "index": 1, "text": "Copy curta..." },
     { "index": 2, "text": "Copy media..." },
@@ -75,6 +99,13 @@ Depois do node que monta `postId`, `texto1`, `texto2`, `texto3`, `video` e `thum
   "postId": "={{ $json.postId }}",
   "videoUrl": "={{ $json.video }}",
   "thumbnailUrl": "={{ $json.thumb }}",
+  "maxDurationSeconds": 12,
+  "profile": {
+    "name": "Tlin",
+    "handle": "@tlin.ai",
+    "imageUrl": "https://SEU_LINK/profile.png",
+    "verifiedImageUrl": "https://SEU_LINK/verified.png"
+  },
   "variants": [
     { "index": 1, "text": "={{ $json.texto1 }}" },
     { "index": 2, "text": "={{ $json.texto2 }}" },

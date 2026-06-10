@@ -4,6 +4,7 @@ import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import sharp from 'sharp';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
@@ -19,6 +20,18 @@ const EMOJI_FONT = process.env.EMOJI_FONT || path.join(rootDir, 'assets', 'fonts
 const CANVAS = { w: 1080, h: 1920 };
 const SAFE = { x: 0, y: 285, w: 1080, h: 1350 };
 const CARD = { x: 100, y: 305, w: 880, h: 1310 };
+const MAX_DURATION_SECONDS = Number(process.env.MAX_DURATION_SECONDS || 20);
+const FFMPEG_PRESET = process.env.FFMPEG_PRESET || 'veryfast';
+const FFMPEG_CRF = String(process.env.FFMPEG_CRF || 20);
+const HEADER = {
+  y: CARD.y + 78,
+  avatarSize: 96,
+  profileTextX: CARD.x + 116,
+  nameSize: 38,
+  handleSize: 29,
+  gap: 2,
+  verifiedSize: 23
+};
 
 export async function renderPayload(payload) {
   validatePayload(payload);
@@ -29,21 +42,28 @@ export async function renderPayload(payload) {
   const postId = safeName(payload.postId || `post-${Date.now()}`);
   const sourceVideo = await downloadToFile(payload.videoUrl, path.join(workDir, `${postId}-source.mp4`));
   const duration = await probeDuration(sourceVideo);
-  const renderDuration = Math.max(2, Math.min(Number(payload.durationSeconds || duration || 12), 20));
+  const maxDuration = Number(payload.maxDurationSeconds || MAX_DURATION_SECONDS || 20);
+  const renderDuration = Math.max(2, Math.min(Number(payload.durationSeconds || duration || 12), maxDuration));
+  const profile = await resolveProfile(payload, postId);
 
   const files = [];
   for (const variant of payload.variants) {
     const index = Number(variant.index || files.length + 1);
     const fileName = `${postId}_${index}.mp4`;
     const outPath = path.join(outputDir, fileName);
-    const textPath = path.join(workDir, `${postId}_${index}.txt`);
     const textLayout = fitCopyText(String(variant.text || ''));
+    const layers = await createStaticLayers({
+      postId,
+      index,
+      textLayout,
+      profile
+    });
 
-    await fs.writeFile(textPath, textLayout.text, 'utf8');
     await renderVariant({
       input: sourceVideo,
       output: outPath,
-      textPath,
+      baseLayer: layers.baseLayer,
+      frameLayer: layers.frameLayer,
       textLayout,
       duration: renderDuration
     });
@@ -102,17 +122,7 @@ async function probeDuration(input) {
   return Number(result.stdout.trim()) || 0;
 }
 
-async function renderVariant({ input, output, textPath, textLayout, duration }) {
-  const headerY = CARD.y + 78;
-  const avatarSize = 96;
-  const profileTextX = CARD.x + 116;
-  const profileNameSize = 38;
-  const profileHandleSize = 29;
-  const profileGap = 2;
-  const profileBlockHeight = profileNameSize + profileGap + profileHandleSize;
-  const profileNameY = Math.round(headerY + (avatarSize - profileBlockHeight) / 2);
-  const profileHandleY = profileNameY + profileNameSize + profileGap;
-  const verifiedSize = 23;
+async function renderVariant({ input, output, baseLayer, frameLayer, textLayout, duration }) {
   const copyY = CARD.y + 190;
   const videoY = copyY + textLayout.height + 52;
   const videoBottomLimit = SAFE.y + SAFE.h - 40;
@@ -121,38 +131,130 @@ async function renderVariant({ input, output, textPath, textLayout, duration }) 
     y: videoY,
     w: CARD.w,
     h: clamp(videoBottomLimit - videoY, 460, 780),
-    radius: 64
+    radius: 78
   };
 
   const filter = [
-    `[0:v]scale=${video.w}:${video.h}:force_original_aspect_ratio=increase,crop=${video.w}:${video.h},setsar=1,format=rgba[vid]`,
-    `[1:v]scale=150:150:force_original_aspect_ratio=increase,crop=150:150,scale=${avatarSize}:${avatarSize},format=rgba[avatar]`,
-    roundedAlpha('avatar', 'avatarRound', avatarSize, avatarSize, Math.round(avatarSize / 2)),
-    `[2:v]scale=${verifiedSize}:${verifiedSize}:force_original_aspect_ratio=decrease,format=rgba[verifiedIcon]`,
-    roundedAlpha('vid', 'rounded', video.w, video.h, video.radius),
-    `color=c=white:s=${CANVAS.w}x${CANVAS.h}:d=${duration}[bg]`,
-    `[bg]drawbox=x=${CARD.x}:y=${CARD.y}:w=${CARD.w}:h=${CARD.h}:color=white:t=fill[card]`,
-    `[card][avatarRound]overlay=x=${CARD.x}:y=${headerY}[withAvatar]`,
-    drawCircleStroke('withAvatar', 'avatarBordered', CARD.x, headerY, avatarSize, duration),
+    `[0:v]scale=${video.w}:${video.h}:force_original_aspect_ratio=increase,crop=${video.w}:${video.h},setsar=1[vid]`,
+    `[1:v]format=rgba[base]`,
+    `[base][vid]overlay=x=${video.x}:y=${video.y}[withvideo]`,
+    `[withvideo][2:v]overlay=x=0:y=0,format=yuv420p[outv]`
+  ].join(';');
+
+  await run('ffmpeg', [
+    '-y',
+    '-stream_loop', '-1',
+    '-i', input,
+    '-loop', '1',
+    '-i', baseLayer,
+    '-loop', '1',
+    '-i', frameLayer,
+    '-t', String(duration),
+    '-filter_complex', filter,
+    '-map', '[outv]',
+    '-map', '0:a?',
+    '-c:v', 'libx264',
+    '-preset', FFMPEG_PRESET,
+    '-crf', FFMPEG_CRF,
+    '-c:a', 'aac',
+    '-b:a', '128k',
+    '-shortest',
+    '-movflags', '+faststart',
+    output
+  ]);
+}
+
+async function resolveProfile(payload, postId) {
+  const profile = payload.profile || {};
+  const imageSource = profile.imageUrl || payload.profileImageUrl || process.env.PROFILE_IMAGE_URL || process.env.PROFILE_IMAGE || profileImage;
+  const verifiedSource = profile.verifiedImageUrl || payload.verifiedImageUrl || process.env.VERIFIED_IMAGE_URL || process.env.VERIFIED_IMAGE || verifiedImage;
+
+  return {
+    name: String(profile.name || payload.profileName || process.env.PROFILE_NAME || 'Tlin'),
+    handle: String(profile.handle || payload.profileHandle || process.env.PROFILE_HANDLE || '@tlin.ai'),
+    image: await resolveAsset(imageSource, path.join(workDir, `${postId}-profile${path.extname(urlishPath(imageSource)) || '.png'}`)),
+    verifiedImage: await resolveAsset(verifiedSource, path.join(workDir, `${postId}-verified${path.extname(urlishPath(verifiedSource)) || '.png'}`)),
+    showVerified: profile.verified !== false && payload.showVerified !== false
+  };
+}
+
+async function resolveAsset(source, destination) {
+  if (!source) return '';
+  if (/^https?:\/\//i.test(source)) {
+    return downloadToFile(source, destination);
+  }
+  if (/^[a-zA-Z]:[\\/]/.test(source) || source.startsWith('/')) {
+    return source;
+  }
+  return path.join(rootDir, source);
+}
+
+function urlishPath(value) {
+  try {
+    return new URL(value).pathname;
+  } catch {
+    return String(value || '');
+  }
+}
+
+async function createStaticLayers({ postId, index, textLayout, profile }) {
+  const copyY = CARD.y + 190;
+  const videoY = copyY + textLayout.height + 52;
+  const videoBottomLimit = SAFE.y + SAFE.h - 40;
+  const video = {
+    x: CARD.x,
+    y: videoY,
+    w: CARD.w,
+    h: clamp(videoBottomLimit - videoY, 460, 780),
+    radius: 78
+  };
+
+  const baseLayer = path.join(workDir, `${postId}_${index}-base.png`);
+  const frameLayer = path.join(workDir, `${postId}_${index}-frame.png`);
+  const avatarLayer = path.join(workDir, `${postId}_${index}-avatar.png`);
+  const textPath = path.join(workDir, `${postId}_${index}.txt`);
+  const avatarBuffer = await createRoundAvatar(profile.image, HEADER.avatarSize);
+  await Promise.all([
+    fs.writeFile(avatarLayer, avatarBuffer),
+    fs.writeFile(textPath, textLayout.text, 'utf8')
+  ]);
+
+  const profileBlockHeight = HEADER.nameSize + HEADER.gap + HEADER.handleSize;
+  const profileNameY = Math.round(HEADER.y + (HEADER.avatarSize - profileBlockHeight) / 2);
+  const profileHandleY = profileNameY + HEADER.nameSize + HEADER.gap;
+  const verifiedX = HEADER.profileTextX + estimateTextWidth(profile.name, HEADER.nameSize, 0.55) + 9;
+  const verifiedY = profileNameY + Math.round((HEADER.nameSize - HEADER.verifiedSize) / 2) + 1;
+
+  const frameSvg = `
+<svg width="${CANVAS.w}" height="${CANVAS.h}" viewBox="0 0 ${CANVAS.w} ${CANVAS.h}" xmlns="http://www.w3.org/2000/svg">
+  <path d="${cornerMaskPath(video.x, video.y, video.w, video.h, video.radius)}" fill="white" fill-rule="evenodd"/>
+  <rect x="${video.x + 3}" y="${video.y + 3}" width="${video.w - 6}" height="${video.h - 6}" rx="${video.radius - 3}" ry="${video.radius - 3}" fill="none" stroke="rgba(17,17,17,0.10)" stroke-width="6"/>
+</svg>`;
+
+  const baseFilter = [
+    `[0:v][1:v]overlay=x=${CARD.x}:y=${HEADER.y}[withAvatar]`,
+    drawCircleStroke('withAvatar', 'avatarBordered', CARD.x, HEADER.y, HEADER.avatarSize, 1),
     drawText({
       input: 'avatarBordered',
       output: 'brandtop',
-      text: 'Tlin',
+      text: profile.name,
       font: FONT_BOLD,
-      size: profileNameSize,
+      size: HEADER.nameSize,
       color: 'black',
-      x: profileTextX,
+      x: HEADER.profileTextX,
       y: profileNameY
     }),
-    `[brandtop][verifiedIcon]overlay=x=${profileTextX + 75}:y=${profileNameY + Math.round((profileNameSize - verifiedSize) / 2) + 1}[brandVerified]`,
+    profile.showVerified
+      ? `[2:v]scale=${HEADER.verifiedSize}:${HEADER.verifiedSize}:force_original_aspect_ratio=decrease,format=rgba[verifiedIcon];[brandtop][verifiedIcon]overlay=x=${verifiedX}:y=${verifiedY}[brandVerified]`
+      : `[brandtop]copy[brandVerified]`,
     drawText({
       input: 'brandVerified',
       output: 'handle',
-      text: '@tlin.ai',
+      text: profile.handle,
       font: FONT_REGULAR,
-      size: profileHandleSize,
+      size: HEADER.handleSize,
       color: '0x536471',
-      x: profileTextX,
+      x: HEADER.profileTextX,
       y: profileHandleY
     }),
     drawTextFile({
@@ -166,32 +268,70 @@ async function renderVariant({ input, output, textPath, textLayout, duration }) 
       y: copyY,
       lineSpacing: textLayout.lineSpacing
     }),
-    `[copy][rounded]overlay=x=${video.x}:y=${video.y}[withvideo]`,
-    drawRoundedStroke('withvideo', 'videoedge', video.x, video.y, video.w, video.h, video.radius, '0x111111@0.10', 6),
-    `[videoedge]copy[footer]`,
-    `[footer]format=yuv420p[outv]`
+    `[copy]format=rgba[baseout]`
   ].join(';');
 
-  await run('ffmpeg', [
+  const baseArgs = [
     '-y',
-    '-stream_loop', '-1',
-    '-i', input,
-    '-i', profileImage,
-    '-i', verifiedImage,
-    '-t', String(duration),
-    '-filter_complex', filter,
-    '-map', '[outv]',
-    '-map', '0:a?',
-    '-c:v', 'libx264',
-    '-preset', 'veryfast',
-    '-crf', '20',
-    '-c:a', 'aac',
-    '-b:a', '128k',
-    '-shortest',
-    '-movflags', '+faststart',
-    output
+    '-f', 'lavfi',
+    '-i', `color=c=white:s=${CANVAS.w}x${CANVAS.h}:d=1`,
+    '-i', avatarLayer
+  ];
+
+  if (profile.showVerified) {
+    baseArgs.push('-i', profile.verifiedImage);
+  } else {
+    baseArgs.push('-f', 'lavfi', '-i', 'color=c=white@0:s=1x1:d=1');
+  }
+
+  baseArgs.push(
+    '-filter_complex', baseFilter,
+    '-map', '[baseout]',
+    '-frames:v', '1',
+    baseLayer
+  );
+
+  await Promise.all([
+    run('ffmpeg', baseArgs),
+    sharp(Buffer.from(frameSvg)).png().toFile(frameLayer)
   ]);
+
+  return { baseLayer, frameLayer };
 }
+
+async function createRoundAvatar(input, size) {
+  const avatar = await sharp(input)
+    .resize(size, size, { fit: 'cover' })
+    .png()
+    .toBuffer();
+  const mask = Buffer.from(`<svg width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg"><circle cx="${size / 2}" cy="${size / 2}" r="${size / 2}" fill="white"/></svg>`);
+
+  return sharp(avatar)
+    .composite([{ input: mask, blend: 'dest-in' }])
+    .png()
+    .toBuffer();
+}
+
+function cornerMaskPath(x, y, w, h, r) {
+  return [
+    `M${x} ${y}h${w}v${h}h-${w}z`,
+    `M${x + r} ${y}`,
+    `h${w - 2 * r}`,
+    `a${r} ${r} 0 0 1 ${r} ${r}`,
+    `v${h - 2 * r}`,
+    `a${r} ${r} 0 0 1 -${r} ${r}`,
+    `h-${w - 2 * r}`,
+    `a${r} ${r} 0 0 1 -${r} -${r}`,
+    `v-${h - 2 * r}`,
+    `a${r} ${r} 0 0 1 ${r} -${r}`,
+    'z'
+  ].join(' ');
+}
+
+function estimateTextWidth(text, fontSize, factor) {
+  return Math.round(String(text).length * fontSize * factor);
+}
+
 
 function drawText({ input, output, text, font, size, color, x, y }) {
   return `[${input}]drawtext=fontfile='${ffPath(font)}':text='${ffText(text)}':fontcolor=${color}:fontsize=${size}:x=${x}:y=${y}[${output}]`;

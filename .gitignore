@@ -11,3 +11,4 @@ server.log
 # n8n exports can contain workspace-specific IDs and credential references.
 *UPDATED.json
 Twitter Portal de Noticias Extrator - Tlin Reels Renderer*.json
+My workflow*.json
