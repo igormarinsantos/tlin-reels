@@ -18,7 +18,8 @@ PUBLIC_URL=https://reels.tlin.cloud
 MAX_DURATION_SECONDS=12
 FFMPEG_PRESET=ultrafast
 FFMPEG_CRF=22
-COPY_VIDEO_GAP=28
+COPY_VIDEO_GAP=38
+CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 PROFILE_NAME=Tlin
 PROFILE_HANDLE=@tlin.ai
 PROFILE_IMAGE_URL=https://seu-dominio.com/profile.png
@@ -29,11 +30,11 @@ VERIFIED_IMAGE_URL=https://seu-dominio.com/verified.png
 
 ## Emoji
 
-O projeto inclui `assets/fonts/AppleColorEmoji.ttf`, baixada da release Linux de `samuelngs/apple-emoji-ttf`. No Docker, as fontes do projeto sao copiadas para o `fontconfig` e o FFmpeg roda com `USE_FONTCONFIG=1`.
+O projeto inclui `assets/fonts/AppleColorEmoji.ttf`, baixada da release Linux de `samuelngs/apple-emoji-ttf`. A camada estatica do layout e renderizada por Chromium headless como PNG, entao copy, acentos e emojis sao desenhados antes do FFmpeg compor o video.
 
 ```text
 EMOJI_FONT=/app/assets/fonts/AppleColorEmoji.ttf
-USE_FONTCONFIG=1
+USE_FONTCONFIG=0
 ```
 
 Observacao: a fonte da Apple e proprietaria; confira a licenca/uso antes de distribuir publicamente.

@@ -1,7 +1,7 @@
 FROM node:24-bookworm-slim
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ffmpeg fontconfig fonts-dejavu-core fonts-noto-color-emoji \
+  && apt-get install -y --no-install-recommends chromium ffmpeg fontconfig fonts-dejavu-core fonts-noto-color-emoji \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -19,7 +19,8 @@ RUN mkdir -p /usr/local/share/fonts/tlin \
 ENV NODE_ENV=production
 ENV PORT=8787
 ENV EMOJI_FONT=/app/assets/fonts/AppleColorEmoji.ttf
-ENV USE_FONTCONFIG=1
+ENV CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
+ENV USE_FONTCONFIG=0
 
 EXPOSE 8787
 

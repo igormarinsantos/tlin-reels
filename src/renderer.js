@@ -1,10 +1,11 @@
 import fs from 'node:fs/promises';
-import { createWriteStream } from 'node:fs';
+import { createWriteStream, existsSync } from 'node:fs';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
+import puppeteer from 'puppeteer-core';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
@@ -20,11 +21,12 @@ const USE_FONTCONFIG = process.env.USE_FONTCONFIG === '1';
 
 const CANVAS = { w: 1080, h: 1920 };
 const SAFE = { x: 0, y: 285, w: 1080, h: 1350 };
-const CARD = { x: 100, y: 305, w: 880, h: 1310 };
-const COPY_VIDEO_GAP = Number(process.env.COPY_VIDEO_GAP || 28);
+const CARD = { x: 50, y: 305, w: 980, h: 1310 };
+const COPY_VIDEO_GAP = Number(process.env.COPY_VIDEO_GAP || 38);
 const MAX_DURATION_SECONDS = Number(process.env.MAX_DURATION_SECONDS || 20);
 const FFMPEG_PRESET = process.env.FFMPEG_PRESET || 'veryfast';
 const FFMPEG_CRF = String(process.env.FFMPEG_CRF || 20);
+const CHROMIUM_EXECUTABLE_PATH = process.env.CHROMIUM_EXECUTABLE_PATH || '';
 const HEADER = {
   y: CARD.y + 78,
   avatarSize: 96,
@@ -34,6 +36,8 @@ const HEADER = {
   gap: 2,
   verifiedSize: 23
 };
+
+let browserPromise;
 
 export async function renderPayload(payload) {
   validatePayload(payload);
@@ -83,6 +87,14 @@ export async function renderPayload(payload) {
     postId,
     files
   };
+}
+
+export async function closeRenderer() {
+  if (!browserPromise) return;
+
+  const browser = await browserPromise;
+  browserPromise = null;
+  await browser.close();
 }
 
 function validatePayload(payload) {
@@ -214,87 +226,22 @@ async function createStaticLayers({ postId, index, textLayout, profile }) {
   const baseLayer = path.join(workDir, `${postId}_${index}-base.png`);
   const frameLayer = path.join(workDir, `${postId}_${index}-frame.png`);
   const avatarLayer = path.join(workDir, `${postId}_${index}-avatar.png`);
-  const textPath = path.join(workDir, `${postId}_${index}.txt`);
   const avatarBuffer = await createRoundAvatar(profile.image, HEADER.avatarSize);
-  await Promise.all([
-    fs.writeFile(avatarLayer, avatarBuffer),
-    fs.writeFile(textPath, textLayout.text, 'utf8')
-  ]);
-
-  const profileBlockHeight = HEADER.nameSize + HEADER.gap + HEADER.handleSize;
-  const profileNameY = Math.round(HEADER.y + (HEADER.avatarSize - profileBlockHeight) / 2);
-  const profileHandleY = profileNameY + HEADER.nameSize + HEADER.gap;
-  const verifiedX = HEADER.profileTextX + estimateTextWidth(profile.name, HEADER.nameSize, 0.55) + 9;
-  const verifiedY = profileNameY + Math.round((HEADER.nameSize - HEADER.verifiedSize) / 2) + 1;
+  await fs.writeFile(avatarLayer, avatarBuffer);
 
   const frameSvg = `
 <svg width="${CANVAS.w}" height="${CANVAS.h}" viewBox="0 0 ${CANVAS.w} ${CANVAS.h}" xmlns="http://www.w3.org/2000/svg">
   <path d="${cornerMaskPath(video.x, video.y, video.w, video.h, video.radius)}" fill="white" fill-rule="evenodd"/>
-  <rect x="${video.x + 3}" y="${video.y + 3}" width="${video.w - 6}" height="${video.h - 6}" rx="${video.radius - 3}" ry="${video.radius - 3}" fill="none" stroke="rgba(17,17,17,0.10)" stroke-width="6"/>
+  <rect x="${video.x + 3}" y="${video.y + 3}" width="${video.w - 6}" height="${video.h - 6}" rx="${video.radius - 3}" ry="${video.radius - 3}" fill="none" stroke="rgba(17,17,17,0.20)" stroke-width="6"/>
 </svg>`;
 
-  const baseFilter = [
-    `[0:v][1:v]overlay=x=${CARD.x}:y=${HEADER.y}[withAvatar]`,
-    drawCircleStroke('withAvatar', 'avatarBordered', CARD.x, HEADER.y, HEADER.avatarSize, 1),
-    drawText({
-      input: 'avatarBordered',
-      output: 'brandtop',
-      text: profile.name,
-      font: FONT_BOLD,
-      size: HEADER.nameSize,
-      color: 'black',
-      x: HEADER.profileTextX,
-      y: profileNameY
-    }),
-    profile.showVerified
-      ? `[2:v]scale=${HEADER.verifiedSize}:${HEADER.verifiedSize}:force_original_aspect_ratio=decrease,format=rgba[verifiedIcon];[brandtop][verifiedIcon]overlay=x=${verifiedX}:y=${verifiedY}[brandVerified]`
-      : `[brandtop]copy[brandVerified]`,
-    drawText({
-      input: 'brandVerified',
-      output: 'handle',
-      text: profile.handle,
-      font: FONT_REGULAR,
-      size: HEADER.handleSize,
-      color: '0x536471',
-      x: HEADER.profileTextX,
-      y: profileHandleY
-    }),
-    drawTextFile({
-      input: 'handle',
-      output: 'copy',
-      textPath,
-      font: FONT_BOLD,
-      size: textLayout.fontSize,
-      color: 'black',
-      x: CARD.x,
-      y: copyY,
-      lineSpacing: textLayout.lineSpacing
-    }),
-    `[copy]format=rgba[baseout]`
-  ].join(';');
-
-  const baseArgs = [
-    '-y',
-    '-f', 'lavfi',
-    '-i', `color=c=white:s=${CANVAS.w}x${CANVAS.h}:d=1`,
-    '-i', avatarLayer
-  ];
-
-  if (profile.showVerified) {
-    baseArgs.push('-i', profile.verifiedImage);
-  } else {
-    baseArgs.push('-f', 'lavfi', '-i', 'color=c=white@0:s=1x1:d=1');
-  }
-
-  baseArgs.push(
-    '-filter_complex', baseFilter,
-    '-map', '[baseout]',
-    '-frames:v', '1',
-    baseLayer
-  );
-
   await Promise.all([
-    run('ffmpeg', baseArgs),
+    renderBaseLayerWithBrowser({
+      output: baseLayer,
+      textLayout,
+      profile,
+      avatarLayer
+    }),
     sharp(Buffer.from(frameSvg)).png().toFile(frameLayer)
   ]);
 
@@ -330,13 +277,161 @@ function cornerMaskPath(x, y, w, h, r) {
   ].join(' ');
 }
 
-function estimateTextWidth(text, fontSize, factor) {
-  return Math.round(String(text).length * fontSize * factor);
-}
-
-
 function drawText({ input, output, text, font, size, color, x, y }) {
   return `[${input}]drawtext=${fontOption(font)}:text='${ffText(text)}':fontcolor=${color}:fontsize=${size}:x=${x}:y=${y}[${output}]`;
+}
+
+async function renderBaseLayerWithBrowser({ output, textLayout, profile, avatarLayer }) {
+  const profileBlockHeight = HEADER.nameSize + HEADER.gap + HEADER.handleSize;
+  const profileNameY = Math.round(HEADER.y + (HEADER.avatarSize - profileBlockHeight) / 2);
+  const profileHandleY = profileNameY + HEADER.nameSize + HEADER.gap;
+  const copyY = CARD.y + 190;
+  const [regularFont, boldFont, avatar, verified] = await Promise.all([
+    fs.readFile(FONT_REGULAR),
+    fs.readFile(FONT_BOLD),
+    fs.readFile(avatarLayer),
+    profile.showVerified ? fs.readFile(profile.verifiedImage) : Promise.resolve(null)
+  ]);
+  const html = staticLayerHtml({
+    profile,
+    textLayout,
+    profileNameY,
+    profileHandleY,
+    copyY,
+    regularFont,
+    boldFont,
+    avatar,
+    verified
+  });
+  const browser = await getBrowser();
+  const page = await browser.newPage();
+
+  try {
+    await page.setViewport({
+      width: CANVAS.w,
+      height: CANVAS.h,
+      deviceScaleFactor: 1
+    });
+    await page.setContent(html, { waitUntil: 'load' });
+    await page.screenshot({
+      path: output,
+      type: 'png',
+      omitBackground: false
+    });
+  } finally {
+    await page.close();
+  }
+}
+
+function staticLayerHtml({ profile, textLayout, profileNameY, profileHandleY, copyY, regularFont, boldFont, avatar, verified }) {
+  const emojiFace = `@font-face{font-family:AppleEmojiLocal;src:url("${fileUrl(EMOJI_FONT)}") format('truetype');}`;
+  const fontStack = 'DMSansLocal, sans-serif';
+  const emojiStack = 'AppleEmojiLocal, "Apple Color Emoji", "Noto Color Emoji"';
+  const copyLineHeight = textLayout.fontSize + textLayout.lineSpacing;
+  const lines = textLayout.text.split('\n');
+
+  return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+@font-face{font-family:DMSansLocal;src:url(data:font/truetype;base64,${regularFont.toString('base64')}) format('truetype');font-weight:400;font-style:normal;}
+@font-face{font-family:DMSansLocal;src:url(data:font/truetype;base64,${boldFont.toString('base64')}) format('truetype');font-weight:700;font-style:normal;}
+${emojiFace}
+*{box-sizing:border-box}
+html,body{margin:0;width:${CANVAS.w}px;height:${CANVAS.h}px;background:#fff;overflow:hidden}
+body{font-family:${fontStack};letter-spacing:0}
+.avatar{position:absolute;left:${CARD.x}px;top:${HEADER.y}px;width:${HEADER.avatarSize}px;height:${HEADER.avatarSize}px;border:2px solid #d0d7de;border-radius:999px}
+.nameRow{position:absolute;left:${HEADER.profileTextX}px;top:${profileNameY}px;height:${HEADER.nameSize + 3}px;display:flex;align-items:center;gap:5px}
+.name{font-family:${fontStack};font-weight:700;font-size:${HEADER.nameSize}px;line-height:${HEADER.nameSize}px;color:#000}
+.verified{width:${HEADER.verifiedSize}px;height:${HEADER.verifiedSize}px;display:block;transform:translateY(1px)}
+.handle{position:absolute;left:${HEADER.profileTextX}px;top:${profileHandleY}px;font-family:${fontStack};font-weight:400;font-size:${HEADER.handleSize}px;line-height:${HEADER.handleSize}px;color:#536471}
+.copy{position:absolute;left:${CARD.x}px;top:${copyY}px;width:${CARD.w}px;font-family:${fontStack};font-weight:700;font-size:${textLayout.fontSize}px;line-height:${copyLineHeight}px;color:#000}
+.emoji{font-family:${emojiStack};font-weight:400}
+</style>
+</head>
+<body>
+<img class="avatar" src="data:image/png;base64,${avatar.toString('base64')}">
+<div class="nameRow"><span class="name">${escapeHtml(profile.name)}</span>${profile.showVerified && verified ? `<img class="verified" src="data:image/png;base64,${verified.toString('base64')}">` : ''}</div>
+<div class="handle">${escapeHtml(profile.handle)}</div>
+<div class="copy">${lines.map(line => `<div>${renderTextWithEmoji(line)}</div>`).join('')}</div>
+</body>
+</html>`;
+}
+
+async function getBrowser() {
+  if (!browserPromise) {
+    browserPromise = puppeteer.launch({
+      executablePath: resolveChromiumExecutable(),
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--allow-file-access-from-files'],
+      headless: 'new'
+    });
+  }
+
+  return browserPromise;
+}
+
+function resolveChromiumExecutable() {
+  if (CHROMIUM_EXECUTABLE_PATH) return CHROMIUM_EXECUTABLE_PATH;
+
+  const candidates = [
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/google-chrome'
+  ];
+
+  return candidates.find(candidate => requireFsExists(candidate)) || candidates[0];
+}
+
+function requireFsExists(candidate) {
+  return existsSync(candidate);
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function renderTextWithEmoji(value) {
+  const parts = [];
+  let current = '';
+  let currentIsEmoji = false;
+
+  for (const char of String(value)) {
+    const isEmoji = isEmojiChar(char);
+    if (current && isEmoji !== currentIsEmoji) {
+      parts.push({ text: current, isEmoji: currentIsEmoji });
+      current = '';
+    }
+
+    current += char;
+    currentIsEmoji = isEmoji;
+  }
+
+  if (current) {
+    parts.push({ text: current, isEmoji: currentIsEmoji });
+  }
+
+  return parts
+    .map(part => part.isEmoji
+      ? `<span class="emoji">${escapeHtml(part.text)}</span>`
+      : escapeHtml(part.text))
+    .join('');
+}
+
+function isEmojiChar(char) {
+  return /\p{Extended_Pictographic}|\p{Emoji_Presentation}/u.test(char);
+}
+
+function fileUrl(filePath) {
+  return encodeURI(`file:///${path.resolve(filePath).replace(/\\/g, '/')}`);
 }
 
 function drawTextFile({ input, output, textPath, font, size, color, x, y, lineSpacing }) {
