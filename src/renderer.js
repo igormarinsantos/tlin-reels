@@ -22,7 +22,7 @@ const USE_FONTCONFIG = process.env.USE_FONTCONFIG === '1';
 
 const CANVAS = { w: 1080, h: 1920 };
 const SAFE = { x: 0, y: 285, w: 1080, h: 1350 };
-const CARD = { x: 50, y: 305, w: 980, h: 1310 };
+const CARD = { x: 70, y: 305, w: 940, h: 1310 };
 const COPY_VIDEO_GAP = Number(process.env.COPY_VIDEO_GAP || 38);
 const MAX_DURATION_SECONDS = Number(process.env.MAX_DURATION_SECONDS || 20);
 const FFMPEG_PRESET = process.env.FFMPEG_PRESET || 'veryfast';
@@ -30,12 +30,12 @@ const FFMPEG_CRF = String(process.env.FFMPEG_CRF || 20);
 const CHROMIUM_EXECUTABLE_PATH = process.env.CHROMIUM_EXECUTABLE_PATH || '';
 const HEADER = {
   y: CARD.y + 78,
-  avatarSize: 96,
-  profileTextX: CARD.x + 116,
-  nameSize: 38,
-  handleSize: 29,
+  avatarSize: 104,
+  profileTextX: CARD.x + 126,
+  nameSize: 42,
+  handleSize: 31,
   gap: 2,
-  verifiedSize: 23
+  verifiedSize: 25
 };
 
 let browserPromise;
@@ -235,7 +235,7 @@ async function createStaticLayers({ postId, index, textLayout, profile }) {
   const frameSvg = `
 <svg width="${CANVAS.w}" height="${CANVAS.h}" viewBox="0 0 ${CANVAS.w} ${CANVAS.h}" xmlns="http://www.w3.org/2000/svg">
   <path d="${cornerMaskPath(video.x, video.y, video.w, video.h, video.radius)}" fill="white" fill-rule="evenodd"/>
-  <rect x="${video.x + 3}" y="${video.y + 3}" width="${video.w - 6}" height="${video.h - 6}" rx="${video.radius - 3}" ry="${video.radius - 3}" fill="none" stroke="rgba(17,17,17,0.20)" stroke-width="6"/>
+  <rect x="${video.x + 5}" y="${video.y + 5}" width="${video.w - 10}" height="${video.h - 10}" rx="${video.radius - 5}" ry="${video.radius - 5}" fill="none" stroke="rgba(17,17,17,0.22)" stroke-width="4"/>
 </svg>`;
 
   await Promise.all([
@@ -503,7 +503,7 @@ function ffText(value) {
 function fitCopyText(text) {
   const area = { w: CARD.w, h: 255 };
 
-  for (let fontSize = 33; fontSize >= 22; fontSize -= 1) {
+  for (let fontSize = 36; fontSize >= 24; fontSize -= 1) {
     const maxChars = Math.max(20, Math.floor(area.w / (fontSize * 0.54)));
     const lines = wrapText(text, maxChars, 6);
     const lineSpacing = Math.max(8, Math.round(fontSize * 0.32));
@@ -522,9 +522,9 @@ function fitCopyText(text) {
   const lines = wrapText(text, 52, 6);
   return {
     text: lines.join('\n'),
-    fontSize: 22,
+    fontSize: 24,
     lineSpacing: 8,
-    height: lines.length * 22 + (lines.length - 1) * 8
+    height: lines.length * 24 + (lines.length - 1) * 8
   };
 }
 
