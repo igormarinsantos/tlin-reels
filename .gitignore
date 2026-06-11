@@ -1,6 +1,7 @@
 node_modules/
 output/
 work/
+config/
 *.log
 server.err.log
 server.log

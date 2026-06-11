@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 import puppeteer from 'puppeteer-core';
+import { loadSettings } from './settings.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
@@ -179,15 +180,17 @@ async function renderVariant({ input, output, baseLayer, frameLayer, textLayout,
 }
 
 async function resolveProfile(payload, postId) {
+  const settings = await loadSettings();
   const profile = payload.profile || {};
-  const imageSource = profile.imageUrl || payload.profileImageUrl || process.env.PROFILE_IMAGE_URL || process.env.PROFILE_IMAGE || profileImage;
-  const verifiedSource = profile.verifiedImageUrl || payload.verifiedImageUrl || process.env.VERIFIED_IMAGE_URL || process.env.VERIFIED_IMAGE || verifiedImage;
+  const imageSource = profile.imageUrl || payload.profileImageUrl || settings.profileImageUrl || process.env.PROFILE_IMAGE_URL || process.env.PROFILE_IMAGE || profileImage;
+  const verifiedSource = profile.verifiedImageUrl || payload.verifiedImageUrl || settings.verifiedImageUrl || process.env.VERIFIED_IMAGE_URL || process.env.VERIFIED_IMAGE || verifiedImage;
 
   return {
-    name: String(profile.name || payload.profileName || process.env.PROFILE_NAME || 'Tlin'),
-    handle: String(profile.handle || payload.profileHandle || process.env.PROFILE_HANDLE || '@tlin.ai'),
+    name: String(profile.name || payload.profileName || settings.profileName || process.env.PROFILE_NAME || 'Tlin'),
+    handle: String(profile.handle || payload.profileHandle || settings.profileHandle || process.env.PROFILE_HANDLE || '@tlin.ai'),
     image: await resolveAsset(imageSource, path.join(workDir, `${postId}-profile${path.extname(urlishPath(imageSource)) || '.png'}`)),
     verifiedImage: await resolveAsset(verifiedSource, path.join(workDir, `${postId}-verified${path.extname(urlishPath(verifiedSource)) || '.png'}`)),
+    verifiedGap: Number(profile.verifiedGap ?? payload.verifiedGap ?? settings.verifiedGap ?? process.env.VERIFIED_GAP ?? 5),
     showVerified: profile.verified !== false && payload.showVerified !== false
   };
 }
@@ -342,7 +345,7 @@ ${emojiFace}
 html,body{margin:0;width:${CANVAS.w}px;height:${CANVAS.h}px;background:#fff;overflow:hidden}
 body{font-family:${fontStack};letter-spacing:0}
 .avatar{position:absolute;left:${CARD.x}px;top:${HEADER.y}px;width:${HEADER.avatarSize}px;height:${HEADER.avatarSize}px;border:2px solid #d0d7de;border-radius:999px}
-.nameRow{position:absolute;left:${HEADER.profileTextX}px;top:${profileNameY}px;height:${HEADER.nameSize + 3}px;display:flex;align-items:center;gap:5px}
+.nameRow{position:absolute;left:${HEADER.profileTextX}px;top:${profileNameY}px;height:${HEADER.nameSize + 3}px;display:flex;align-items:center;gap:${profile.verifiedGap}px}
 .name{font-family:${fontStack};font-weight:700;font-size:${HEADER.nameSize}px;line-height:${HEADER.nameSize}px;color:#000}
 .verified{width:${HEADER.verifiedSize}px;height:${HEADER.verifiedSize}px;display:block;transform:translateY(1px)}
 .handle{position:absolute;left:${HEADER.profileTextX}px;top:${profileHandleY}px;font-family:${fontStack};font-weight:400;font-size:${HEADER.handleSize}px;line-height:${HEADER.handleSize}px;color:#536471}

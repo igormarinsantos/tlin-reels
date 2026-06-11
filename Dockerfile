@@ -11,7 +11,7 @@ RUN npm ci --omit=dev
 
 COPY . .
 
-RUN mkdir -p /app/output /app/work
+RUN mkdir -p /app/output /app/work /app/config/assets
 RUN mkdir -p /usr/local/share/fonts/tlin \
   && cp /app/assets/fonts/*.ttf /usr/local/share/fonts/tlin/ \
   && fc-cache -f
