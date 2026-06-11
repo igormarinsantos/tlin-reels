@@ -503,7 +503,7 @@ function ffText(value) {
 function fitCopyText(text) {
   const area = { w: CARD.w, h: 255 };
 
-  for (let fontSize = 43; fontSize >= 28; fontSize -= 1) {
+  for (let fontSize = 45; fontSize >= 29; fontSize -= 1) {
     const maxChars = Math.max(20, Math.floor(area.w / (fontSize * 0.54)));
     const lines = wrapText(text, maxChars, 6);
     const lineSpacing = Math.max(8, Math.round(fontSize * 0.32));
@@ -522,9 +522,9 @@ function fitCopyText(text) {
   const lines = wrapText(text, 52, 6);
   return {
     text: lines.join('\n'),
-    fontSize: 28,
+    fontSize: 29,
     lineSpacing: 9,
-    height: lines.length * 28 + (lines.length - 1) * 9
+    height: lines.length * 29 + (lines.length - 1) * 9
   };
 }
 
