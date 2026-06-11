@@ -24,6 +24,7 @@ PROFILE_NAME=Tlin
 PROFILE_HANDLE=@tlin.ai
 PROFILE_IMAGE_URL=https://seu-dominio.com/profile.png
 VERIFIED_IMAGE_URL=https://seu-dominio.com/verified.png
+FONT_FAMILY=dm-sans
 ```
 
 `FFMPEG_PRESET=ultrafast` acelera bastante e aumenta um pouco o tamanho do arquivo. Se quiser mais qualidade/arquivo menor, use `veryfast`.
@@ -57,7 +58,8 @@ Payload esperado:
     "name": "Tlin",
     "handle": "@tlin.ai",
     "imageUrl": "https://example.com/profile.png",
-    "verifiedImageUrl": "https://example.com/verified.png"
+    "verifiedImageUrl": "https://example.com/verified.png",
+    "fontFamily": "dm-sans"
   },
   "variants": [
     { "index": 1, "text": "Copy curta..." },
@@ -101,7 +103,8 @@ Depois do node que monta `postId`, `texto1`, `texto2`, `texto3`, `video` e `thum
     "name": "Tlin",
     "handle": "@tlin.ai",
     "imageUrl": "https://SEU_LINK/profile.png",
-    "verifiedImageUrl": "https://SEU_LINK/verified.png"
+    "verifiedImageUrl": "https://SEU_LINK/verified.png",
+    "fontFamily": "dm-sans"
   },
   "variants": [
     { "index": 1, "text": "={{ $json.texto1 }}" },
@@ -110,3 +113,5 @@ Depois do node que monta `postId`, `texto1`, `texto2`, `texto3`, `video` e `thum
   ]
 }
 ```
+
+Para trocar para Inter, use `"fontFamily": "inter"` no `profile`, mande `"fontFamily": "inter"` na raiz do payload, ou escolha na interface `https://reels.tlin.cloud/`.

@@ -15,8 +15,20 @@ const outputDir = path.join(rootDir, 'output');
 const profileImage = path.join(rootDir, 'assets', 'profile.png');
 const verifiedImage = path.join(rootDir, 'assets', 'verified.png');
 
-const FONT_REGULAR = process.env.FONT_REGULAR || defaultFont('regular');
-const FONT_BOLD = process.env.FONT_BOLD || defaultFont('bold');
+const FONT_FAMILIES = {
+  'dm-sans': {
+    cssName: 'DMSansLocal',
+    label: 'DM Sans',
+    regular: process.env.FONT_REGULAR || defaultFont('regular'),
+    bold: process.env.FONT_BOLD || defaultFont('bold')
+  },
+  inter: {
+    cssName: 'InterLocal',
+    label: 'Inter',
+    regular: process.env.INTER_FONT || process.env.INTER_FONT_REGULAR || path.join(rootDir, 'assets', 'fonts', 'Inter.ttf'),
+    bold: process.env.INTER_FONT || process.env.INTER_FONT_BOLD || path.join(rootDir, 'assets', 'fonts', 'Inter.ttf')
+  }
+};
 const EMOJI_FONT = process.env.EMOJI_FONT || path.join(rootDir, 'assets', 'fonts', 'AppleColorEmoji.ttf');
 const USE_FONTCONFIG = process.env.USE_FONTCONFIG === '1';
 
@@ -191,8 +203,18 @@ async function resolveProfile(payload, postId) {
     image: await resolveAsset(imageSource, path.join(workDir, `${postId}-profile${path.extname(urlishPath(imageSource)) || '.png'}`)),
     verifiedImage: await resolveAsset(verifiedSource, path.join(workDir, `${postId}-verified${path.extname(urlishPath(verifiedSource)) || '.png'}`)),
     verifiedGap: Number(profile.verifiedGap ?? payload.verifiedGap ?? settings.verifiedGap ?? process.env.VERIFIED_GAP ?? 5),
+    fontFamily: normalizeFontFamily(profile.fontFamily || payload.fontFamily || settings.fontFamily || process.env.FONT_FAMILY),
     showVerified: profile.verified !== false && payload.showVerified !== false
   };
+}
+
+function normalizeFontFamily(value) {
+  const normalized = String(value || 'dm-sans').trim().toLowerCase();
+  return normalized === 'inter' ? 'inter' : 'dm-sans';
+}
+
+function resolveFontSet(fontFamily) {
+  return FONT_FAMILIES[normalizeFontFamily(fontFamily)] || FONT_FAMILIES['dm-sans'];
 }
 
 async function resolveAsset(source, destination) {
@@ -289,9 +311,10 @@ async function renderBaseLayerWithBrowser({ output, textLayout, profile, avatarL
   const profileNameY = Math.round(HEADER.y + (HEADER.avatarSize - profileBlockHeight) / 2);
   const profileHandleY = profileNameY + HEADER.nameSize + HEADER.gap;
   const copyY = CARD.y + 224;
+  const fontSet = resolveFontSet(profile.fontFamily);
   const [regularFont, boldFont, avatar, verified] = await Promise.all([
-    fs.readFile(FONT_REGULAR),
-    fs.readFile(FONT_BOLD),
+    fs.readFile(fontSet.regular),
+    fs.readFile(fontSet.bold),
     fs.readFile(avatarLayer),
     profile.showVerified ? fs.readFile(profile.verifiedImage) : Promise.resolve(null)
   ]);
@@ -303,6 +326,7 @@ async function renderBaseLayerWithBrowser({ output, textLayout, profile, avatarL
     copyY,
     regularFont,
     boldFont,
+    fontSet,
     avatar,
     verified
   });
@@ -326,9 +350,9 @@ async function renderBaseLayerWithBrowser({ output, textLayout, profile, avatarL
   }
 }
 
-function staticLayerHtml({ profile, textLayout, profileNameY, profileHandleY, copyY, regularFont, boldFont, avatar, verified }) {
+function staticLayerHtml({ profile, textLayout, profileNameY, profileHandleY, copyY, regularFont, boldFont, fontSet, avatar, verified }) {
   const emojiFace = `@font-face{font-family:AppleEmojiLocal;src:url("${fileUrl(EMOJI_FONT)}") format('truetype');}`;
-  const fontStack = 'DMSansLocal, sans-serif';
+  const fontStack = `${fontSet.cssName}, sans-serif`;
   const emojiStack = 'AppleEmojiLocal, "Apple Color Emoji", "Noto Color Emoji"';
   const copyLineHeight = textLayout.fontSize + textLayout.lineSpacing;
   const lines = textLayout.text.split('\n');
@@ -338,8 +362,8 @@ function staticLayerHtml({ profile, textLayout, profileNameY, profileHandleY, co
 <head>
 <meta charset="utf-8">
 <style>
-@font-face{font-family:DMSansLocal;src:url(data:font/truetype;base64,${regularFont.toString('base64')}) format('truetype');font-weight:400;font-style:normal;}
-@font-face{font-family:DMSansLocal;src:url(data:font/truetype;base64,${boldFont.toString('base64')}) format('truetype');font-weight:700;font-style:normal;}
+@font-face{font-family:${fontSet.cssName};src:url(data:font/truetype;base64,${regularFont.toString('base64')}) format('truetype');font-weight:400;font-style:normal;}
+@font-face{font-family:${fontSet.cssName};src:url(data:font/truetype;base64,${boldFont.toString('base64')}) format('truetype');font-weight:700;font-style:normal;}
 ${emojiFace}
 *{box-sizing:border-box}
 html,body{margin:0;width:${CANVAS.w}px;height:${CANVAS.h}px;background:#fff;overflow:hidden}

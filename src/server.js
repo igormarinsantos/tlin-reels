@@ -72,6 +72,7 @@ function settingsPage() {
 <style>
 @font-face{font-family:DMSans;src:url('/assets/fonts/DMSans-Regular.ttf');font-weight:400}
 @font-face{font-family:DMSans;src:url('/assets/fonts/DMSans-Bold.ttf');font-weight:700}
+@font-face{font-family:InterPreview;src:url('/assets/fonts/Inter.ttf');font-weight:100 900}
 *{box-sizing:border-box}
 body{margin:0;background:#f6f7f9;color:#111;font-family:DMSans,Arial,sans-serif}
 main{width:min(920px,calc(100vw - 32px));margin:40px auto}
@@ -79,13 +80,15 @@ h1{margin:0 0 24px;font-size:32px;line-height:1.1}
 .panel{background:#fff;border:1px solid #dde1e7;border-radius:8px;padding:24px;box-shadow:0 10px 30px rgba(20,25,35,.06)}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
 label{display:block;font-size:13px;font-weight:700;margin:0 0 7px;color:#344054}
-input{width:100%;height:44px;border:1px solid #cfd6df;border-radius:6px;padding:0 12px;font:inherit}
+input,select{width:100%;height:44px;border:1px solid #cfd6df;border-radius:6px;padding:0 12px;font:inherit;background:#fff}
 input[type=file]{height:auto;padding:10px;background:#fbfcfd}
 .full{grid-column:1/-1}
 .actions{display:flex;align-items:center;gap:12px;margin-top:22px}
 button{height:44px;border:0;border-radius:6px;background:#111;color:#fff;padding:0 18px;font:700 15px DMSans,Arial;cursor:pointer}
 button.secondary{background:#eef1f5;color:#111}
 .preview{display:flex;align-items:center;gap:20px;margin-top:24px;padding-top:22px;border-top:1px solid #edf0f3}
+.preview[data-font="inter"]{font-family:InterPreview,Arial,sans-serif}
+.preview[data-font="dm-sans"]{font-family:DMSans,Arial,sans-serif}
 .avatar{width:76px;height:76px;border:1px solid #d0d7de;border-radius:50%;object-fit:cover}
 .nameRow{display:flex;align-items:center;gap:var(--verified-gap,5px)}
 .name{font-weight:700;font-size:30px;line-height:32px}
@@ -113,6 +116,13 @@ button.secondary{background:#eef1f5;color:#111}
         <input id="verifiedGap" type="number" min="0" max="28" step="1">
       </div>
       <div>
+        <label for="fontFamily">Fonte</label>
+        <select id="fontFamily">
+          <option value="dm-sans">DM Sans</option>
+          <option value="inter">Inter</option>
+        </select>
+      </div>
+      <div>
         <label for="profileFile">Foto de perfil</label>
         <input id="profileFile" type="file" accept="image/*">
       </div>
@@ -134,7 +144,7 @@ button.secondary{background:#eef1f5;color:#111}
       <button id="reload" class="secondary">Recarregar</button>
       <span id="status" class="status"></span>
     </div>
-    <div class="preview">
+    <div id="preview" class="preview" data-font="dm-sans">
       <img id="avatarPreview" class="avatar" src="/assets/profile.png" alt="">
       <div>
         <div id="previewRow" class="nameRow">
@@ -147,7 +157,7 @@ button.secondary{background:#eef1f5;color:#111}
   </section>
 </main>
 <script>
-const fields = ['profileName','profileHandle','profileImageUrl','verifiedImageUrl','verifiedGap'];
+const fields = ['profileName','profileHandle','profileImageUrl','verifiedImageUrl','verifiedGap','fontFamily'];
 const $ = id => document.getElementById(id);
 
 async function load() {
@@ -179,6 +189,7 @@ function updatePreview(settings = {}) {
   $('namePreview').textContent = $('profileName').value || settings.profileName || 'Tlin';
   $('handlePreview').textContent = $('profileHandle').value || settings.profileHandle || '@tlin.ai';
   $('previewRow').style.setProperty('--verified-gap', (Number($('verifiedGap').value || settings.verifiedGap || 5)) + 'px');
+  $('preview').dataset.font = $('fontFamily').value || settings.fontFamily || 'dm-sans';
   const avatar = $('profileImageUrl').value || settings.profileImageUrl;
   const verified = $('verifiedImageUrl').value || settings.verifiedImageUrl;
   $('avatarPreview').src = publicAssetUrl(avatar) || '/assets/profile.png';

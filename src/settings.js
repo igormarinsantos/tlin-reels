@@ -13,7 +13,8 @@ const defaults = {
   profileHandle: '@tlin.ai',
   profileImageUrl: '',
   verifiedImageUrl: '',
-  verifiedGap: 5
+  verifiedGap: 5,
+  fontFamily: 'dm-sans'
 };
 
 export async function loadSettings() {
@@ -48,8 +49,14 @@ function normalizeSettings(input) {
     profileHandle: String(input.profileHandle || defaults.profileHandle),
     profileImageUrl: String(input.profileImageUrl || ''),
     verifiedImageUrl: String(input.verifiedImageUrl || ''),
-    verifiedGap: clamp(Number(input.verifiedGap ?? defaults.verifiedGap), 0, 28)
+    verifiedGap: clamp(Number(input.verifiedGap ?? defaults.verifiedGap), 0, 28),
+    fontFamily: normalizeFontFamily(input.fontFamily)
   };
+}
+
+function normalizeFontFamily(value) {
+  const normalized = String(value || defaults.fontFamily).trim().toLowerCase();
+  return normalized === 'inter' ? 'inter' : 'dm-sans';
 }
 
 async function saveDataImage(dataUrl, baseName) {
