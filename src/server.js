@@ -6,7 +6,7 @@ const app = express();
 const port = Number(process.env.PORT || 8787);
 
 app.set('trust proxy', true);
-app.use(express.json({ limit: '20mb' }));
+app.use(express.json({ limit: '20mb', type: ['application/json', 'application/*+json', 'text/plain', '*/*'] }));
 app.use('/output', express.static('output'));
 app.use('/assets', express.static('assets'));
 app.use('/config-assets', express.static('config/assets'));

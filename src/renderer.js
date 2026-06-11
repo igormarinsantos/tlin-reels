@@ -71,7 +71,7 @@ export async function renderPayload(payload) {
     const index = Number(variant.index || files.length + 1);
     const fileName = `${postId}_${index}.mp4`;
     const outPath = path.join(outputDir, fileName);
-    const textLayout = fitCopyText(String(variant.text || ''));
+    const textLayout = fitCopyText(normalizeInputText(variant.text || ''));
     const layers = await createStaticLayers({
       postId,
       index,
@@ -83,7 +83,6 @@ export async function renderPayload(payload) {
       input: sourceVideo,
       output: outPath,
       baseLayer: layers.baseLayer,
-      frameLayer: layers.frameLayer,
       textLayout,
       duration: renderDuration
     });
@@ -150,7 +149,7 @@ async function probeDuration(input) {
   return Number(result.stdout.trim()) || 0;
 }
 
-async function renderVariant({ input, output, baseLayer, frameLayer, textLayout, duration }) {
+async function renderVariant({ input, output, baseLayer, textLayout, duration }) {
   const copyY = CARD.y + 224;
   const videoY = copyY + textLayout.height + COPY_VIDEO_GAP;
   const videoBottomLimit = SAFE.y + SAFE.h - 40;
@@ -163,10 +162,11 @@ async function renderVariant({ input, output, baseLayer, frameLayer, textLayout,
   };
 
   const filter = [
-    `[0:v]scale=${video.w + VIDEO_OVERSCAN * 2}:${video.h + VIDEO_OVERSCAN * 2}:force_original_aspect_ratio=increase,crop=${video.w}:${video.h},setsar=1[vid]`,
+    `[0:v]scale=${video.w + VIDEO_OVERSCAN * 2}:${video.h + VIDEO_OVERSCAN * 2}:force_original_aspect_ratio=increase,crop=${video.w}:${video.h},setsar=1,format=rgba[vidraw]`,
+    roundedAlpha('vidraw', 'vid', video.radius),
     `[1:v]format=rgba[base]`,
     `[base][vid]overlay=x=${video.x}:y=${video.y}[withvideo]`,
-    `[withvideo][2:v]overlay=x=0:y=0,format=yuv420p[outv]`
+    `[withvideo]format=yuv420p[outv]`
   ].join(';');
 
   await run('ffmpeg', [
@@ -175,8 +175,6 @@ async function renderVariant({ input, output, baseLayer, frameLayer, textLayout,
     '-i', input,
     '-loop', '1',
     '-i', baseLayer,
-    '-loop', '1',
-    '-i', frameLayer,
     '-t', String(duration),
     '-filter_complex', filter,
     '-map', '[outv]',
@@ -250,27 +248,18 @@ async function createStaticLayers({ postId, index, textLayout, profile }) {
   };
 
   const baseLayer = path.join(workDir, `${postId}_${index}-base.png`);
-  const frameLayer = path.join(workDir, `${postId}_${index}-frame.png`);
   const avatarLayer = path.join(workDir, `${postId}_${index}-avatar.png`);
   const avatarBuffer = await createRoundAvatar(profile.image, HEADER.avatarSize);
   await fs.writeFile(avatarLayer, avatarBuffer);
 
-  const frameSvg = `
-<svg width="${CANVAS.w}" height="${CANVAS.h}" viewBox="0 0 ${CANVAS.w} ${CANVAS.h}" xmlns="http://www.w3.org/2000/svg">
-  <path d="${cornerMaskPath(video.x, video.y, video.w, video.h, video.radius)}" fill="white" fill-rule="evenodd"/>
-</svg>`;
+  await renderBaseLayerWithBrowser({
+    output: baseLayer,
+    textLayout,
+    profile,
+    avatarLayer
+  });
 
-  await Promise.all([
-    renderBaseLayerWithBrowser({
-      output: baseLayer,
-      textLayout,
-      profile,
-      avatarLayer
-    }),
-    sharp(Buffer.from(frameSvg)).png().toFile(frameLayer)
-  ]);
-
-  return { baseLayer, frameLayer };
+  return { baseLayer };
 }
 
 async function createRoundAvatar(input, size) {
@@ -500,7 +489,7 @@ function drawCircleStroke(input, output, x, y, size, duration) {
   ].join(';');
 }
 
-function roundedAlpha(input, output, width, height, radius) {
+function roundedAlpha(input, output, radius) {
   const alpha = [
     `if(lt(X,${radius})*lt(Y,${radius}),if(lte(hypot(${radius}-X\\,${radius}-Y)\\,${radius})\\,255\\,0)`,
     `if(gt(X,W-${radius})*lt(Y,${radius}),if(lte(hypot(X-(W-${radius})\\,${radius}-Y)\\,${radius})\\,255\\,0)`,
@@ -532,6 +521,15 @@ function ffText(value) {
     .replace(/:/g, '\\:')
     .replace(/\[/g, '\\[')
     .replace(/\]/g, '\\]');
+}
+
+function normalizeInputText(value) {
+  const text = String(value || '').normalize('NFC');
+  if (!/[ÃÂ]/.test(text)) return text;
+
+  const repaired = Buffer.from(text, 'latin1').toString('utf8').normalize('NFC');
+  const replacementCount = (repaired.match(/\uFFFD/g) || []).length;
+  return replacementCount ? text : repaired;
 }
 
 function fitCopyText(text) {
