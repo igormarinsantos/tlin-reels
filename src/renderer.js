@@ -36,6 +36,7 @@ const CANVAS = { w: 1080, h: 1920 };
 const SAFE = { x: 0, y: 285, w: 1080, h: 1350 };
 const CARD = { x: 65, y: 305, w: 950, h: 1310 };
 const COPY_VIDEO_GAP = Number(process.env.COPY_VIDEO_GAP || 38);
+const VIDEO_OVERSCAN = Number(process.env.VIDEO_OVERSCAN || 12);
 const MAX_DURATION_SECONDS = Number(process.env.MAX_DURATION_SECONDS || 20);
 const FFMPEG_PRESET = process.env.FFMPEG_PRESET || 'veryfast';
 const FFMPEG_CRF = String(process.env.FFMPEG_CRF || 20);
@@ -162,7 +163,7 @@ async function renderVariant({ input, output, baseLayer, frameLayer, textLayout,
   };
 
   const filter = [
-    `[0:v]scale=${video.w}:${video.h}:force_original_aspect_ratio=increase,crop=${video.w}:${video.h},setsar=1[vid]`,
+    `[0:v]scale=${video.w + VIDEO_OVERSCAN * 2}:${video.h + VIDEO_OVERSCAN * 2}:force_original_aspect_ratio=increase,crop=${video.w}:${video.h},setsar=1[vid]`,
     `[1:v]format=rgba[base]`,
     `[base][vid]overlay=x=${video.x}:y=${video.y}[withvideo]`,
     `[withvideo][2:v]overlay=x=0:y=0,format=yuv420p[outv]`
@@ -257,7 +258,6 @@ async function createStaticLayers({ postId, index, textLayout, profile }) {
   const frameSvg = `
 <svg width="${CANVAS.w}" height="${CANVAS.h}" viewBox="0 0 ${CANVAS.w} ${CANVAS.h}" xmlns="http://www.w3.org/2000/svg">
   <path d="${cornerMaskPath(video.x, video.y, video.w, video.h, video.radius)}" fill="white" fill-rule="evenodd"/>
-  <rect x="${video.x + 10}" y="${video.y + 10}" width="${video.w - 20}" height="${video.h - 20}" rx="${video.radius - 10}" ry="${video.radius - 10}" fill="none" stroke="rgba(17,17,17,0.14)" stroke-width="3"/>
 </svg>`;
 
   await Promise.all([
@@ -340,6 +340,7 @@ async function renderBaseLayerWithBrowser({ output, textLayout, profile, avatarL
       deviceScaleFactor: 1
     });
     await page.setContent(html, { waitUntil: 'load' });
+    await page.evaluate(() => document.fonts.ready);
     await page.screenshot({
       path: output,
       type: 'png',
@@ -374,7 +375,7 @@ body{font-family:${fontStack};letter-spacing:0}
 .verified{width:${HEADER.verifiedSize}px;height:${HEADER.verifiedSize}px;display:block;transform:translateY(1px)}
 .handle{position:absolute;left:${HEADER.profileTextX}px;top:${profileHandleY}px;font-family:${fontStack};font-weight:400;font-size:${HEADER.handleSize}px;line-height:${HEADER.handleSize}px;color:#536471}
 .copy{position:absolute;left:${CARD.x}px;top:${copyY}px;width:${CARD.w}px;font-family:${fontStack};font-weight:700;font-size:${textLayout.fontSize}px;line-height:${copyLineHeight}px;color:#000}
-.emoji{font-family:${emojiStack};font-weight:400}
+.emoji{font-family:${emojiStack} !important;font-weight:400;font-style:normal;line-height:inherit}
 </style>
 </head>
 <body>
@@ -430,15 +431,16 @@ function renderTextWithEmoji(value) {
   const parts = [];
   let current = '';
   let currentIsEmoji = false;
+  const segments = splitGraphemes(String(value));
 
-  for (const char of String(value)) {
-    const isEmoji = isEmojiChar(char);
+  for (const segment of segments) {
+    const isEmoji = isEmojiSegment(segment);
     if (current && isEmoji !== currentIsEmoji) {
       parts.push({ text: current, isEmoji: currentIsEmoji });
       current = '';
     }
 
-    current += char;
+    current += segment;
     currentIsEmoji = isEmoji;
   }
 
@@ -453,8 +455,16 @@ function renderTextWithEmoji(value) {
     .join('');
 }
 
-function isEmojiChar(char) {
-  return /\p{Extended_Pictographic}|\p{Emoji_Presentation}/u.test(char);
+function splitGraphemes(value) {
+  if (typeof Intl !== 'undefined' && Intl.Segmenter) {
+    return Array.from(new Intl.Segmenter('pt-BR', { granularity: 'grapheme' }).segment(value), item => item.segment);
+  }
+
+  return Array.from(value);
+}
+
+function isEmojiSegment(segment) {
+  return /\p{Extended_Pictographic}|\p{Emoji_Presentation}|\p{Emoji_Modifier}|\p{Regional_Indicator}/u.test(segment);
 }
 
 function fileUrl(filePath) {
