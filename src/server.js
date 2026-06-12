@@ -1,9 +1,14 @@
 import express from 'express';
+import { randomUUID } from 'node:crypto';
 import { renderPayload } from './renderer.js';
 import { loadSettings, saveSettings } from './settings.js';
 
 const app = express();
 const port = Number(process.env.PORT || 8787);
+const jobs = new Map();
+const jobQueue = [];
+const maxActiveJobs = Number(process.env.ASYNC_RENDER_CONCURRENCY || 1);
+let activeJobs = 0;
 
 app.set('trust proxy', true);
 app.use(express.json({ limit: '20mb', type: ['application/json', 'application/*+json', 'text/plain', '*/*'] }));
@@ -37,14 +42,7 @@ app.post('/settings', async (req, res) => {
 app.post('/render', async (req, res) => {
   try {
     const result = await renderPayload(req.body);
-    const origin = process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
-    res.json({
-      ...result,
-      files: result.files.map(file => ({
-        ...file,
-        publicUrl: new URL(file.url, origin).toString()
-      }))
-    });
+    res.json(withPublicUrls(result, requestOrigin(req)));
   } catch (error) {
     console.error(error);
     res.status(500).json({
@@ -54,6 +52,50 @@ app.post('/render', async (req, res) => {
   }
 });
 
+app.post('/render-async', (req, res) => {
+  const jobId = randomUUID();
+  const origin = requestOrigin(req);
+  const job = {
+    id: jobId,
+    status: 'queued',
+    createdAt: new Date().toISOString(),
+    startedAt: null,
+    finishedAt: null,
+    result: null,
+    error: null
+  };
+
+  jobs.set(jobId, job);
+  jobQueue.push({ job, payload: req.body, origin });
+  drainJobQueue();
+
+  res.status(202).json({
+    ok: true,
+    jobId,
+    status: job.status,
+    statusUrl: new URL(`/render-jobs/${jobId}`, origin).toString()
+  });
+});
+
+app.get('/render-jobs/:jobId', (req, res) => {
+  const job = jobs.get(req.params.jobId);
+  if (!job) {
+    res.status(404).json({ ok: false, error: 'Job nao encontrado.' });
+    return;
+  }
+
+  res.json({
+    ok: job.status !== 'failed',
+    id: job.id,
+    status: job.status,
+    createdAt: job.createdAt,
+    startedAt: job.startedAt,
+    finishedAt: job.finishedAt,
+    result: job.result,
+    error: job.error
+  });
+});
+
 const server = app.listen(port, () => {
   console.log(`Tlin Reels Renderer listening on http://localhost:${port}`);
 });
@@ -61,6 +103,60 @@ const server = app.listen(port, () => {
 server.requestTimeout = Number(process.env.REQUEST_TIMEOUT_MS || 15 * 60 * 1000);
 server.headersTimeout = server.requestTimeout + 10 * 1000;
 server.keepAliveTimeout = 65 * 1000;
+
+function requestOrigin(req) {
+  return process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
+}
+
+function withPublicUrls(result, origin) {
+  return {
+    ...result,
+    files: result.files.map(file => ({
+      ...file,
+      publicUrl: new URL(file.url, origin).toString()
+    }))
+  };
+}
+
+function drainJobQueue() {
+  while (activeJobs < maxActiveJobs && jobQueue.length > 0) {
+    const next = jobQueue.shift();
+    activeJobs += 1;
+    runJob(next).finally(() => {
+      activeJobs -= 1;
+      cleanupJobs();
+      drainJobQueue();
+    });
+  }
+}
+
+async function runJob({ job, payload, origin }) {
+  job.status = 'running';
+  job.startedAt = new Date().toISOString();
+
+  try {
+    job.result = withPublicUrls(await renderPayload(payload), origin);
+    job.status = 'completed';
+  } catch (error) {
+    console.error(error);
+    job.status = 'failed';
+    job.error = error.message || String(error);
+  } finally {
+    job.finishedAt = new Date().toISOString();
+  }
+}
+
+function cleanupJobs() {
+  const maxAgeMs = Number(process.env.JOB_TTL_MS || 6 * 60 * 60 * 1000);
+  const now = Date.now();
+
+  for (const [id, job] of jobs) {
+    const referenceDate = job.finishedAt || job.createdAt;
+    if (now - Date.parse(referenceDate) > maxAgeMs) {
+      jobs.delete(id);
+    }
+  }
+}
 
 function settingsPage() {
   return `<!doctype html>

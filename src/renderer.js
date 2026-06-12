@@ -38,8 +38,9 @@ const CARD = { x: 65, y: 305, w: 950, h: 1310 };
 const COPY_VIDEO_GAP = Number(process.env.COPY_VIDEO_GAP || 38);
 const VIDEO_OVERSCAN = Number(process.env.VIDEO_OVERSCAN || 12);
 const MAX_DURATION_SECONDS = Number(process.env.MAX_DURATION_SECONDS || 20);
-const FFMPEG_PRESET = process.env.FFMPEG_PRESET || 'veryfast';
-const FFMPEG_CRF = String(process.env.FFMPEG_CRF || 20);
+const FFMPEG_PRESET = process.env.FFMPEG_PRESET || 'ultrafast';
+const FFMPEG_CRF = String(process.env.FFMPEG_CRF || 22);
+const RENDER_CONCURRENCY = clamp(Number(process.env.RENDER_CONCURRENCY || 2), 1, 4);
 const CHROMIUM_EXECUTABLE_PATH = process.env.CHROMIUM_EXECUTABLE_PATH || '';
 const HEADER = {
   y: CARD.y + 78,
@@ -66,9 +67,8 @@ export async function renderPayload(payload) {
   const renderDuration = Math.max(2, Math.min(Number(payload.durationSeconds || duration || 12), maxDuration));
   const profile = await resolveProfile(payload, postId);
 
-  const files = [];
-  for (const variant of payload.variants) {
-    const index = Number(variant.index || files.length + 1);
+  const files = await mapLimit(payload.variants, RENDER_CONCURRENCY, async (variant, position) => {
+    const index = Number(variant.index || position + 1);
     const fileName = `${postId}_${index}.mp4`;
     const outPath = path.join(outputDir, fileName);
     const textLayout = fitCopyText(normalizeInputText(variant.text || ''));
@@ -87,19 +87,36 @@ export async function renderPayload(payload) {
       duration: renderDuration
     });
 
-    files.push({
+    return {
       index,
       fileName,
       path: outPath,
       url: `/output/${fileName}`
-    });
-  }
+    };
+  });
 
   return {
     ok: true,
     postId,
     files
   };
+}
+
+async function mapLimit(items, limit, mapper) {
+  const results = new Array(items.length);
+  let cursor = 0;
+
+  async function worker() {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await mapper(items[index], index);
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(limit, items.length) }, worker);
+  await Promise.all(workers);
+  return results.sort((a, b) => a.index - b.index);
 }
 
 export async function closeRenderer() {

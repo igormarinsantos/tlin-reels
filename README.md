@@ -18,6 +18,8 @@ PUBLIC_URL=https://reels.tlin.cloud
 MAX_DURATION_SECONDS=12
 FFMPEG_PRESET=ultrafast
 FFMPEG_CRF=22
+RENDER_CONCURRENCY=2
+ASYNC_RENDER_CONCURRENCY=1
 COPY_VIDEO_GAP=38
 VIDEO_OVERSCAN=12
 CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
@@ -45,6 +47,8 @@ API:
 
 ```text
 POST http://localhost:8787/render
+POST http://localhost:8787/render-async
+GET  http://localhost:8787/render-jobs/:jobId
 ```
 
 Payload esperado:
@@ -85,6 +89,19 @@ Resposta:
   ]
 }
 ```
+
+Para evitar timeout no n8n, prefira `POST /render-async`. Ele responde na hora:
+
+```json
+{
+  "ok": true,
+  "jobId": "uuid",
+  "status": "queued",
+  "statusUrl": "https://reels.tlin.cloud/render-jobs/uuid"
+}
+```
+
+Depois consulte `GET /render-jobs/:jobId` ate `status` virar `completed`. O resultado final fica em `result.files`.
 
 ## n8n
 
