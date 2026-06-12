@@ -53,6 +53,14 @@ app.post('/render', async (req, res) => {
 });
 
 app.post('/render-async', (req, res) => {
+  enqueueRenderJob(req, res, async origin => withPublicUrls(await renderPayload(req.body), origin));
+});
+
+app.post('/render-batch-async', (req, res) => {
+  enqueueRenderJob(req, res, origin => renderBatchPayload(req.body, origin));
+});
+
+function enqueueRenderJob(req, res, worker) {
   const jobId = randomUUID();
   const origin = requestOrigin(req);
   const job = {
@@ -68,7 +76,7 @@ app.post('/render-async', (req, res) => {
   };
 
   jobs.set(jobId, job);
-  jobQueue.push({ job, payload: req.body, origin });
+  jobQueue.push({ job, origin, worker });
   drainJobQueue();
 
   res.status(202).json({
@@ -78,7 +86,7 @@ app.post('/render-async', (req, res) => {
     postId: job.postId,
     statusUrl: job.statusUrl
   });
-});
+}
 
 app.get('/render-jobs/:jobId', (req, res) => {
   const job = jobs.get(req.params.jobId);
@@ -136,12 +144,12 @@ function drainJobQueue() {
   }
 }
 
-async function runJob({ job, payload, origin }) {
+async function runJob({ job, origin, worker }) {
   job.status = 'running';
   job.startedAt = new Date().toISOString();
 
   try {
-    job.result = withPublicUrls(await renderPayload(payload), origin);
+    job.result = await worker(origin);
     job.status = 'completed';
   } catch (error) {
     console.error(error);
@@ -150,6 +158,45 @@ async function runJob({ job, payload, origin }) {
   } finally {
     job.finishedAt = new Date().toISOString();
   }
+}
+
+async function renderBatchPayload(payload, origin) {
+  const posts = Array.isArray(payload?.posts) ? payload.posts : [];
+  if (posts.length === 0) {
+    throw new Error('posts precisa ter pelo menos um item.');
+  }
+
+  const results = [];
+
+  for (const post of posts) {
+    const result = withPublicUrls(await renderPayload({
+      postId: post.postId,
+      videoUrl: post.videoUrl || post.video,
+      thumbnailUrl: post.thumbnailUrl || post.thumb,
+      maxDurationSeconds: post.maxDurationSeconds || payload.maxDurationSeconds,
+      durationSeconds: post.durationSeconds || payload.durationSeconds,
+      profile: post.profile || payload.profile,
+      variants: post.variants
+    }), origin);
+
+    results.push({
+      ...result,
+      source: post.source || {
+        texto1: post.texto1 || post.variants?.[0]?.text || '',
+        texto2: post.texto2 || post.variants?.[1]?.text || '',
+        texto3: post.texto3 || post.variants?.[2]?.text || '',
+        video: post.videoUrl || post.video || '',
+        thumb: post.thumbnailUrl || post.thumb || ''
+      }
+    });
+  }
+
+  return {
+    ok: true,
+    mode: 'batch',
+    postCount: results.length,
+    posts: results
+  };
 }
 
 function cleanupJobs() {
