@@ -57,6 +57,8 @@ app.post('/render-async', (req, res) => {
   const origin = requestOrigin(req);
   const job = {
     id: jobId,
+    postId: req.body?.postId || null,
+    statusUrl: new URL(`/render-jobs/${jobId}`, origin).toString(),
     status: 'queued',
     createdAt: new Date().toISOString(),
     startedAt: null,
@@ -73,7 +75,8 @@ app.post('/render-async', (req, res) => {
     ok: true,
     jobId,
     status: job.status,
-    statusUrl: new URL(`/render-jobs/${jobId}`, origin).toString()
+    postId: job.postId,
+    statusUrl: job.statusUrl
   });
 });
 
@@ -87,6 +90,9 @@ app.get('/render-jobs/:jobId', (req, res) => {
   res.json({
     ok: job.status !== 'failed',
     id: job.id,
+    jobId: job.id,
+    postId: job.postId,
+    statusUrl: job.statusUrl,
     status: job.status,
     createdAt: job.createdAt,
     startedAt: job.startedAt,
